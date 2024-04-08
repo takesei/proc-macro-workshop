@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, token::Struct, DataStruct, DeriveInput, FieldsNamed};
+use syn::{parse_macro_input, DeriveInput};
 
 // pub struct DeriveInput {
 //    pub attrs: Vec<Attribute>,
@@ -25,62 +25,61 @@ pub fn derive(input: TokenStream) -> TokenStream {
         panic!("Argument must be struct");
     };
 
+    let builder_init = named.iter().map(|f| {
+        let identity = &f.ident;
+        quote! {
+            #identity: None,
+        }
+    });
+
     let builder_fields = named.iter().map(|f| {
+        let identity = &f.ident;
+        let typing = &f.ty;
+        quote! {
+            #identity: Option<#typing>,
+        }
+    });
+
+    let builder_fn = named.iter().map(|f| {
+        let identity = &f.ident;
+        let typing = &f.ty;
+        quote! {
+            fn #identity(&mut self, #identity: #typing) -> &mut Self {
+                self.#identity = Some(#identity);
+                self
+            }
+        }
+    });
+
+    let builder_build = named.iter().map(|f| {
         let ident = &f.ident;
         quote! {
-            #ident: None
+            #ident: self.#ident.take().ok_or("#ident not set")?,
         }
     });
 
     let expanded = quote! {
-        pub struct #builder_name {
-            executable: Option<String>,
-            args: Option<Vec<String>>,
-            env: Option<Vec<String>>,
-            current_dir: Option<String>,
-        }
-
-       impl #builder_name {
-           fn executable(&mut self, executable: String) -> &mut Self {
-               self.executable = Some(executable);
-               self
-           }
-           fn args(&mut self, args: Vec<String>) -> &mut Self {
-               self.args = Some(args);
-               self
-           }
-           fn env(&mut self, env: Vec<String>) -> &mut Self {
-               self.env = Some(env);
-               self
-           }
-           fn current_dir(&mut self, current_dir: String) -> &mut Self {
-               self.current_dir = Some(current_dir);
-               self
-           }
-           pub fn build(&mut self) -> Result<#original_name, Box<dyn std::error::Error>> {
-               let executable = self.executable.take().ok_or("executable")?;
-               let args =  self.args.take().ok_or("executable")?;
-               let env = self.env.take().ok_or("env")?;
-               let current_dir = self.current_dir.take().ok_or("current_dir")?;
-
-               Ok(#original_name {
-                   executable: executable,
-                   args: args,
-                   env: env,
-                   current_dir: current_dir,
-               })
-
-           }
-       }
-
-
         impl #original_name {
             fn builder() -> #builder_name {
                 #builder_name {
-                    #(#builder_fields,)*
+                    #(#builder_init)*
                 }
             }
         }
+
+        pub struct #builder_name {
+            #(#builder_fields)*
+        }
+
+       impl #builder_name {
+           #(#builder_fn)*
+           pub fn build(&mut self) -> Result<#original_name, Box<dyn std::error::Error>> {
+               Ok(#original_name {
+                   #(#builder_build)*
+               })
+           }
+       }
+
     };
     expanded.into()
 }
