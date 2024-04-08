@@ -40,6 +40,20 @@ pub fn derive(input: TokenStream) -> TokenStream {
                self.current_dir = Some(current_dir);
                self
            }
+           pub fn build(&mut self) -> Result<#name, Box<dyn std::error::Error>> {
+               let executable = self.executable.take().ok_or("executable")?;
+               let args =  self.args.take().ok_or("executable")?;
+               let env = self.env.take().ok_or("env")?;
+               let current_dir = self.current_dir.take().ok_or("current_dir")?;
+
+               Ok(#name {
+                   executable: executable,
+                   args: args,
+                   env: env,
+                   current_dir: current_dir,
+               })
+
+           }
        }
 
 
