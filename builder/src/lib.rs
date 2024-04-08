@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{parse_macro_input, token::Struct, DataStruct, DeriveInput, FieldsNamed};
 
 // pub struct DeriveInput {
 //    pub attrs: Vec<Attribute>,
@@ -13,17 +13,34 @@ use syn::{parse_macro_input, DeriveInput};
 #[proc_macro_derive(Builder)]
 pub fn derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
+
+    let original_name = input.ident;
+    let builder_name = quote::format_ident!("{}Builder", original_name);
+
+    let syn::Data::Struct(syn::DataStruct {
+        fields: syn::Fields::Named(syn::FieldsNamed { ref named, .. }),
+        ..
+    }) = input.data
+    else {
+        panic!("Argument must be struct");
+    };
+
+    let builder_fields = named.iter().map(|f| {
+        let ident = &f.ident;
+        quote! {
+            #ident: None
+        }
+    });
 
     let expanded = quote! {
-        pub struct CommandBuilder {
+        pub struct #builder_name {
             executable: Option<String>,
             args: Option<Vec<String>>,
             env: Option<Vec<String>>,
             current_dir: Option<String>,
         }
 
-       impl CommandBuilder {
+       impl #builder_name {
            fn executable(&mut self, executable: String) -> &mut Self {
                self.executable = Some(executable);
                self
@@ -40,13 +57,13 @@ pub fn derive(input: TokenStream) -> TokenStream {
                self.current_dir = Some(current_dir);
                self
            }
-           pub fn build(&mut self) -> Result<#name, Box<dyn std::error::Error>> {
+           pub fn build(&mut self) -> Result<#original_name, Box<dyn std::error::Error>> {
                let executable = self.executable.take().ok_or("executable")?;
                let args =  self.args.take().ok_or("executable")?;
                let env = self.env.take().ok_or("env")?;
                let current_dir = self.current_dir.take().ok_or("current_dir")?;
 
-               Ok(#name {
+               Ok(#original_name {
                    executable: executable,
                    args: args,
                    env: env,
@@ -57,16 +74,13 @@ pub fn derive(input: TokenStream) -> TokenStream {
        }
 
 
-        impl #name {
-            fn builder() -> CommandBuilder {
-                CommandBuilder {
-                    executable: None,
-                    args: None,
-                    env: None,
-                    current_dir: None
+        impl #original_name {
+            fn builder() -> #builder_name {
+                #builder_name {
+                    #(#builder_fields,)*
                 }
             }
         }
     };
-    proc_macro::TokenStream::from(expanded)
+    expanded.into()
 }
